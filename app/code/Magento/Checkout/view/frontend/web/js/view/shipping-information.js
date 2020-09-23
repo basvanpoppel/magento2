@@ -28,14 +28,20 @@ define([
          * @return {String}
          */
         getShippingMethodTitle: function () {
-            var shippingMethod = quote.shippingMethod();
-            var shippingMethodTitle = '';
+            var shippingMethod = quote.shippingMethod(),
+                shippingMethodTitle = '';
 
-            if (typeof(shippingMethod['method_title']) !== 'undefined') {
-                shippingMethodTitle = ' - ' + shippingMethod['method_title'];
+            if (!shippingMethod) {
+                return '';
             }
 
-            return shippingMethod ? shippingMethod['carrier_title'] + shippingMethodTitle : '';
+            shippingMethodTitle = shippingMethod['carrier_title'];
+
+            if (typeof shippingMethod['method_title'] !== 'undefined') {
+                shippingMethodTitle += ' - ' + shippingMethod['method_title'];
+            }
+
+            return shippingMethodTitle;
         },
 
         /**
