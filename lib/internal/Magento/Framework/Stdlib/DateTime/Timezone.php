@@ -31,6 +31,11 @@ class Timezone implements TimezoneInterface
     ];
 
     /**
+     * @var array
+     */
+    private $dateFormatterCache = [];
+
+    /**
      * @var string
      */
     protected $_scopeType;
@@ -174,16 +179,9 @@ class Timezone implements TimezoneInterface
             case ($date instanceof \DateTimeImmutable):
                 return new \DateTime($date->format('Y-m-d H:i:s'), $date->getTimezone());
             case (!is_numeric($date)):
-                $timeType = $includeTime ? \IntlDateFormatter::SHORT : \IntlDateFormatter::NONE;
-                $formatter = new \IntlDateFormatter(
-                    $locale,
-                    \IntlDateFormatter::SHORT,
-                    $timeType,
-                    new \DateTimeZone($timezone)
-                );
-
-                $date = $this->appendTimeIfNeeded($date, $includeTime);
-                $date = $formatter->parse($date) ?: (new \DateTime($date))->getTimestamp();
+                $date = $this->appendTimeIfNeeded($date, $includeTime, $timezone, $locale);
+                $date = $this->parseLocaleDate($date, $locale, $timezone, $includeTime)
+                    ?: (new \DateTime($date))->getTimestamp();
                 break;
         }
 
@@ -195,11 +193,27 @@ class Timezone implements TimezoneInterface
      */
     public function scopeDate($scope = null, $date = null, $includeTime = false)
     {
-        $timezone = $this->_scopeConfig->getValue($this->getDefaultTimezonePath(), $this->_scopeType, $scope);
-        $date = new \DateTime(is_numeric($date) ? '@' . $date : $date, new \DateTimeZone($timezone));
+        $timezone = new \DateTimeZone(
+            $this->_scopeConfig->getValue($this->getDefaultTimezonePath(), $this->_scopeType, $scope)
+        );
+        switch (true) {
+            case (empty($date)):
+                $date = new \DateTime('now', $timezone);
+                break;
+            case ($date instanceof \DateTime):
+            case ($date instanceof \DateTimeImmutable):
+                $date = $date->setTimezone($timezone);
+                break;
+            default:
+                $date = new \DateTime(is_numeric($date) ? '@' . $date : $date);
+                $date->setTimezone($timezone);
+                break;
+        }
+
         if (!$includeTime) {
             $date->setTime(0, 0, 0);
         }
+
         return $date;
     }
 
@@ -247,13 +261,8 @@ class Timezone implements TimezoneInterface
             $toTimeStamp += 86400;
         }
 
-        $result = false;
-        if (!$this->_dateTime->isEmptyDate($dateFrom) && $scopeTimeStamp < $fromTimeStamp) {
-        } elseif (!$this->_dateTime->isEmptyDate($dateTo) && $scopeTimeStamp > $toTimeStamp) {
-        } else {
-            $result = true;
-        }
-        return $result;
+        return !(!$this->_dateTime->isEmptyDate($dateFrom) && $scopeTimeStamp < $fromTimeStamp ||
+               !$this->_dateTime->isEmptyDate($dateTo) && $scopeTimeStamp > $toTimeStamp);
     }
 
     /**
@@ -308,7 +317,7 @@ class Timezone implements TimezoneInterface
                 throw new LocalizedException(
                     new Phrase(
                         'The DateTime object timezone needs to be the same as the "%1" timezone in config.',
-                        $this->getConfigTimezone()
+                        [$this->getConfigTimezone()]
                     )
                 );
             }
@@ -320,17 +329,89 @@ class Timezone implements TimezoneInterface
     }
 
     /**
-     * Retrieve date with time
+     * Append time to DateTime
      *
      * @param string $date
-     * @param bool $includeTime
+     * @param boolean $includeTime
+     * @param string $timezone
+     * @param string $locale
      * @return string
+     * @throws LocalizedException
      */
-    private function appendTimeIfNeeded($date, $includeTime)
+    private function appendTimeIfNeeded($date, $includeTime, $timezone, $locale)
     {
         if ($includeTime && !preg_match('/\d{1}:\d{2}/', $date)) {
-            $date .= " 0:00am";
+            $convertedDate = $this->parseLocaleDate($date, $locale, $timezone, false);
+            if (!$convertedDate) {
+                throw new LocalizedException(
+                    new Phrase(
+                        'Could not append time to DateTime'
+                    )
+                );
+            }
+
+            $formatterWithHour = $this->getDateFormatter(
+                $locale,
+                $timezone,
+                \IntlDateFormatter::MEDIUM,
+                \IntlDateFormatter::SHORT
+            );
+            $date = $formatterWithHour->format($convertedDate);
         }
         return $date;
+    }
+
+    /**
+     * Parse date by locale format through IntlDateFormatter
+     *
+     * @param string $date
+     * @param string $locale
+     * @param string $timeZone
+     * @param bool $includeTime
+     * @return int|null Timestamp of date
+     */
+    private function parseLocaleDate(string $date, string $locale, string $timeZone, bool $includeTime): ?int
+    {
+        $allowedStyles = [\IntlDateFormatter::MEDIUM, \IntlDateFormatter::SHORT];
+        $timeStyle = $includeTime ? \IntlDateFormatter::SHORT : \IntlDateFormatter::NONE;
+
+        /**
+         * Try to parse date with different styles
+         */
+        foreach ($allowedStyles as $style) {
+            $formatter = $this->getDateFormatter($locale, $timeZone, $style, $timeStyle);
+            $timeStamp = $formatter->parse($date);
+            if ($timeStamp) {
+                return $timeStamp;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get date formatter for locale
+     *
+     * @param string $locale
+     * @param string $timeZone
+     * @param int $style
+     * @param int $timeStyle
+     * @return \IntlDateFormatter
+     */
+    private function getDateFormatter(string $locale, string $timeZone, int $style, int $timeStyle): \IntlDateFormatter
+    {
+        $cacheKey = "{$locale}_{$timeZone}_{$style}_{$timeStyle}";
+        if (isset($this->dateFormatterCache[$cacheKey])) {
+            return $this->dateFormatterCache[$cacheKey];
+        }
+
+        $this->dateFormatterCache[$cacheKey] = new \IntlDateFormatter(
+            $locale,
+            $style,
+            $timeStyle,
+            new \DateTimeZone($timeZone)
+        );
+
+        return $this->dateFormatterCache[$cacheKey];
     }
 }

@@ -92,8 +92,8 @@ sub vcl_recv {
     }
 
     # Remove all marketing get parameters to minimize the cache objects
-    if (req.url ~ "(\?|&)(gclid|cx|ie|cof|siteurl|zanpid|origin|mc_[a-z]+|utm_[a-z]+)=") {
-        set req.url = regsuball(req.url, "(gclid|cx|ie|cof|siteurl|zanpid|origin|mc_[a-z]+|utm_[a-z]+)=[-_A-z0-9+()%.]+&?", "");
+    if (req.url ~ "(\?|&)(gclid|cx|ie|cof|siteurl|zanpid|origin|fbclid|mc_[a-z]+|utm_[a-z]+|_bta_[a-z]+)=") {
+        set req.url = regsuball(req.url, "(gclid|cx|ie|cof|siteurl|zanpid|origin|fbclid|mc_[a-z]+|utm_[a-z]+|_bta_[a-z]+)=[-_A-z0-9+()%.]+&?", "");
         set req.url = regsub(req.url, "[?|&]+$", "");
     }
 
@@ -106,6 +106,11 @@ sub vcl_recv {
         #unset req.http.Https;
         #unset req.http./* {{ ssl_offloaded_header }} */;
         #unset req.http.Cookie;
+    }
+
+     # Authenticated GraphQL requests should not be cached by default
+    if (req.url ~ "/graphql" && req.http.Authorization ~ "^Bearer") {
+        return (pass);
     }
 
     return (hash);
@@ -123,11 +128,24 @@ sub vcl_hash {
         hash_data(server.ip);
     }
 
+    if (req.url ~ "/graphql") {
+        call process_graphql_headers;
+    }
+
     # To make sure http users don't see ssl warning
     if (req.http./* {{ ssl_offloaded_header }} */) {
         hash_data(req.http./* {{ ssl_offloaded_header }} */);
     }
     /* {{ design_exceptions_code }} */
+}
+
+sub process_graphql_headers {
+    if (req.http.Store) {
+        hash_data(req.http.Store);
+    }
+    if (req.http.Content-Currency) {
+        hash_data(req.http.Content-Currency);
+    }
 }
 
 sub vcl_backend_response {

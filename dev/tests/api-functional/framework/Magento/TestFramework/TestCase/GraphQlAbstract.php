@@ -78,6 +78,29 @@ abstract class GraphQlAbstract extends WebapiAbstract
     }
 
     /**
+     * Perform GraphQL query via GET and returns only the response headers
+     *
+     * @param string $query
+     * @param array $variables
+     * @param string $operationName
+     * @param array $headers
+     * @return array
+     */
+    public function graphQlQueryWithResponseHeaders(
+        string $query,
+        array $variables = [],
+        string $operationName = '',
+        array $headers = []
+    ): array {
+        return $this->getGraphQlClient()->getWithResponseHeaders(
+            $query,
+            $variables,
+            $operationName,
+            $this->composeHeaders($headers)
+        );
+    }
+
+    /**
      * Compose headers
      *
      * @param array $headers
@@ -147,6 +170,11 @@ abstract class GraphQlAbstract extends WebapiAbstract
             self::assertNotNull(
                 $expectedValue,
                 "Value of '{$responseField}' field must not be NULL"
+            );
+            self::assertArrayHasKey(
+                $responseField,
+                $actualResponse,
+                "Response array does not contain key '{$responseField}'"
             );
             self::assertEquals(
                 $expectedValue,
