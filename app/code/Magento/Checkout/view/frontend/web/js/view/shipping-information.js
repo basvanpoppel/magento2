@@ -29,13 +29,8 @@ define([
          */
         getShippingMethodTitle: function () {
             var shippingMethod = quote.shippingMethod();
-            var shippingMethodTitle = '';
 
-            if (typeof(shippingMethod['method_title']) !== 'undefined') {
-                shippingMethodTitle = ' - ' + shippingMethod['method_title'];
-            }
-
-            return shippingMethod ? shippingMethod['carrier_title'] + shippingMethodTitle : '';
+            return shippingMethod ? shippingMethod['carrier_title'] + ' - ' + shippingMethod['method_title'] : '';
         },
 
         /**
